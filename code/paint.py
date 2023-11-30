@@ -1,34 +1,71 @@
 import numpy as np
+from skimage import transform
+import cv2
 
 
-def random_stroke_list(img, length, radius):
+def stroke_list(img):
     h, w, _ = img.shape
 
-    # TODO estimate num strokes from img and brush size
-    num_strokes = 10000
+    x_range = np.linspace(0, w - 1, (w - 1) // 2)
+    y_range = np.linspace(0, h - 1, (h - 1) // 2)
 
-    # TODO don't select strokes that go over the edge of image
-    rand_c = np.random.randint(0, w, num_strokes)
-    rand_r = np.random.randint(0, h, num_strokes)
+    x_grid, y_grid = np.meshgrid(x_range, y_range)
 
-    return np.stack((rand_r, rand_c), axis=-1)
+    coordinates = np.stack((x_grid, y_grid), axis=-1).reshape((-1, 2)).astype(np.int32)
+    np.random.shuffle(coordinates)
+
+    return coordinates
 
 
-def paint_image(img, mask, length, radius, angle, clip, orient):
+def paint_image(img, mask, length, radius, angle, perturb, clip, orient):
     out = np.zeros(img.shape, dtype=np.uint8)
 
-    stroke_centers = random_stroke_list(img, length, radius)
+    stroke_centers = stroke_list(img)
+
+    if mask is None:
+        mask = np.ones((2 * radius + 1, 2 * radius + 1))
+    else:
+        mask = transform.resize(mask, (2 * radius + 1, 2 * radius + 1))
+
+    mask = transform.rotate(mask, angle, True)
 
     for center in stroke_centers:
+        direction = angle
+        if orient:
+            # TODO: figure out angle based on gradient
+            pass
+            angle = ...
+
         cy, cx = center[0], center[1]
-        t = max(0, cy - radius)
-        b = min(cy + radius, img.shape[0] - 1)
-        l = max(0, cx - length // 2)
-        r = min(cx + length // 2, img.shape[1] - 1)
-        # color = img[cy, cx] # center pix color
-        color = np.mean(
-            np.reshape(img[t:b, l:r], (-1, 3)), axis=0
-        )  # avg color under stroke area
-        out[t:b, l:r] = color
+
+        x1 = max(0, cx - length // 2)
+        x2 = min(cx + length // 2, img.shape[1] - 1)
+
+        cos = np.cos(np.radians(direction))
+        sin = np.sin(np.radians(direction))
+        rotation = np.array([[cos, -sin], [sin, cos]])
+
+        end1 = rotation @ [x1 - cx, 0]
+        end2 = rotation @ [x2 - cx, 0]
+        end1 += [cx, cy]
+        end2 += [cx, cy]
+        end1 = end1.astype(np.int32)
+        end2 = end2.astype(np.int32)
+
+        diff = end2 - end1
+        num_steps = max(diff[0], diff[1])
+        step_size = diff / num_steps
+        for i in range(num_steps):
+            point = (end1 + i * step_size).astype(np.int32)
+
+        # color = np.mean(np.reshape(img[t:b, l:r], (-1, 3)), axis=0)
+
+        # if perturb:
+        #     color = np.clip(color + (10 * np.random.rand(3) - 5), 0, 255)
+
+        # if clip:
+        #     pass
+        # else:
+        #     out[t:b, l:r] = color
 
     return out

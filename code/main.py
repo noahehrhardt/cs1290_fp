@@ -29,6 +29,7 @@ def main(args):
         args.length,
         args.radius,
         args.angle,
+        args.perturb,
         args.clip,
         args.orient,
     )
@@ -50,7 +51,10 @@ if __name__ == "__main__":
         "-l", "--length", type=int, default=30, help="Brush stroke length"
     )
     parser.add_argument("-r", "--radius", type=int, default=5, help="Brush radius")
-    parser.add_argument("-a", "--angle", type=int, default=0, help="Brush angle")
+    parser.add_argument("-a", "--angle", type=int, default=90, help="Brush angle")
+    parser.add_argument(
+        "-p", "--perturb", action="store_true", help="Randomly perturb stroke colors"
+    )
     parser.add_argument(
         "-c", "--clip", action="store_true", help="Clip strokes at edges"
     )
