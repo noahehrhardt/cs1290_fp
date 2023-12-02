@@ -20,6 +20,12 @@ def stroke_list(img):
 def paint_image(img, mask, length, radius, angle, perturb, clip, orient):
     out = np.zeros(img.shape, dtype=np.uint8)
 
+    if orient:
+        img_gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+        gx = cv2.Scharr(img_gray, cv2.CV_32F, dx=1, dy=0)
+        gy = cv2.Scharr(img_gray, cv2.CV_32F, dx=0, dy=1)
+        directions = np.degrees(np.arctan(gx, gy)) + 90
+
     stroke_centers = stroke_list(img)
 
     if mask is None:
@@ -31,12 +37,11 @@ def paint_image(img, mask, length, radius, angle, perturb, clip, orient):
 
     for center in stroke_centers:
         direction = angle
+        cy, cx = center[0], center[1]
+
         if orient:
             # TODO: figure out angle based on gradient
-            pass
-            angle = ...
-
-        cy, cx = center[0], center[1]
+            angle = directions[cy, cx]
 
         x1 = max(0, cx - length // 2)
         x2 = min(cx + length // 2, img.shape[1] - 1)
@@ -51,7 +56,7 @@ def paint_image(img, mask, length, radius, angle, perturb, clip, orient):
         end2 += [cx, cy]
         end1 = end1.astype(np.int32)
         end2 = end2.astype(np.int32)
-
+        
         diff = end2 - end1
         num_steps = max(diff[0], diff[1])
         step_size = diff / num_steps
