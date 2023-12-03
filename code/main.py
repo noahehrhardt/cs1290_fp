@@ -13,7 +13,7 @@ def main(args):
         print("input img", in_path, "does not exist")
         sys.exit(1)
 
-    in_img = cv2.cvtColor(cv2.imread(in_path), cv2.COLOR_BGR2RGB)
+    in_img = cv2.imread(in_path)
 
     mask = args.mask
     if mask is not None:
@@ -37,9 +37,15 @@ def main(args):
     if not os.path.isdir("../results"):
         os.mkdir("../results")
 
+    in_name = os.path.splitext(os.path.basename(in_path))[0]
+    mask_name = (
+        os.path.splitext(os.path.basename(args.mask))[0] if args.mask else "square"
+    )
+
+    out_name = f"{in_name}_{mask_name}_{args.length}_{args.radius}_{args.angle}.png"
     cv2.imwrite(
-        os.path.join("../results", "result_" + os.path.basename(in_path)),
-        cv2.cvtColor(out_img, cv2.COLOR_RGB2BGR),
+        os.path.join("../results", out_name),
+        out_img,
     )
 
 
@@ -48,10 +54,10 @@ if __name__ == "__main__":
     parser.add_argument("input", help="Input img/video filepath")
     parser.add_argument("-m", "--mask", help="Brush mask")
     parser.add_argument(
-        "-l", "--length", type=int, default=30, help="Brush stroke length"
+        "-l", "--length", type=int, default=15, help="Brush stroke length"
     )
-    parser.add_argument("-r", "--radius", type=int, default=5, help="Brush radius")
-    parser.add_argument("-a", "--angle", type=int, default=90, help="Brush angle")
+    parser.add_argument("-r", "--radius", type=int, default=3, help="Brush radius")
+    parser.add_argument("-a", "--angle", type=int, default=30, help="Brush angle")
     parser.add_argument(
         "-p", "--perturb", action="store_true", help="Randomly perturb stroke colors"
     )

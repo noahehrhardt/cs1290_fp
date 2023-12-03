@@ -1,13 +1,15 @@
+import cv2
+import matplotlib.pyplot as plt
 import numpy as np
 from skimage import transform
-import cv2
+from tqdm import tqdm
 
 
-def stroke_list(img):
+def stroke_list(img, radius):
     h, w, _ = img.shape
 
-    x_range = np.linspace(0, w - 1, (w - 1) // 2)
-    y_range = np.linspace(0, h - 1, (h - 1) // 2)
+    x_range = np.linspace(0, w - 1, (w - 1) // radius)
+    y_range = np.linspace(0, h - 1, (h - 1) // radius)
 
     x_grid, y_grid = np.meshgrid(x_range, y_range)
 
@@ -17,10 +19,26 @@ def stroke_list(img):
     return coordinates
 
 
-def paint_image(img, mask, length, radius, angle, perturb, clip, orient):
-    out = np.zeros(img.shape, dtype=np.uint8)
+def get_rotated_endpoints(center, length, direction):
+    cx, cy = center[0], center[1]
 
-    stroke_centers = stroke_list(img)
+    x1 = cx - length // 2
+    x2 = cx + length // 2
+
+    cos = np.cos(np.radians(direction))
+    sin = np.sin(np.radians(direction))
+    rotation = np.array([[cos, sin], [-sin, cos]])
+
+    end1 = (rotation @ [x1 - cx, 0] + [cx, cy]).astype(np.int32)
+    end2 = (rotation @ [x2 - cx, 0] + [cx, cy]).astype(np.int32)
+
+    return end1, end2
+
+
+def paint_image(img, mask, length, radius, angle, perturb, clip, orient):
+    out = np.ones(img.shape)
+
+    stroke_centers = stroke_list(img, radius)
 
     if mask is None:
         mask = np.ones((2 * radius + 1, 2 * radius + 1))
@@ -29,43 +47,54 @@ def paint_image(img, mask, length, radius, angle, perturb, clip, orient):
 
     mask = transform.rotate(mask, angle, True)
 
-    for center in stroke_centers:
+    if orient:
+        img_gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+        gx = cv2.Scharr(img_gray, cv2.CV_32F, dx=1, dy=0)
+        gy = cv2.Scharr(img_gray, cv2.CV_32F, dx=0, dy=1)
+        directions = np.degrees(np.arctan(gx, gy)) + 90
+
+    for center in tqdm(stroke_centers):
         direction = angle
+
         if orient:
-            # TODO: figure out angle based on gradient
-            pass
-            angle = ...
+            direction = directions[center[1], center[0]]
 
-        cy, cx = center[0], center[1]
+        if perturb:
+            direction += int(30 * np.random.rand()) - 15
 
-        x1 = max(0, cx - length // 2)
-        x2 = min(cx + length // 2, img.shape[1] - 1)
-
-        cos = np.cos(np.radians(direction))
-        sin = np.sin(np.radians(direction))
-        rotation = np.array([[cos, -sin], [sin, cos]])
-
-        end1 = rotation @ [x1 - cx, 0]
-        end2 = rotation @ [x2 - cx, 0]
-        end1 += [cx, cy]
-        end2 += [cx, cy]
-        end1 = end1.astype(np.int32)
-        end2 = end2.astype(np.int32)
-
+        end1, end2 = get_rotated_endpoints(center, length, direction)
         diff = end2 - end1
-        num_steps = max(diff[0], diff[1])
+
+        brush_mask = np.zeros((img.shape[0], img.shape[1]))
+
+        num_steps = max(abs(diff[0]), abs(diff[1]))
         step_size = diff / num_steps
         for i in range(num_steps):
             point = (end1 + i * step_size).astype(np.int32)
+            mask_size = mask.shape[0]
+            mask_left = point[0] - mask_size // 2
+            mask_top = point[1] - mask_size // 2
+            mask_region = brush_mask[
+                mask_top : mask_top + mask_size, mask_left : mask_left + mask_size
+            ]
+            if mask_region.shape != mask.shape:
+                continue
+            mask_region += mask
 
-        # color = np.mean(np.reshape(img[t:b, l:r], (-1, 3)), axis=0)
+        brush_mask = np.clip(np.atleast_3d(brush_mask), 0, 1)
 
-        # if perturb:
-        #     color = np.clip(color + (10 * np.random.rand(3) - 5), 0, 255)
+        area_under_mask = brush_mask * img
 
-        # if clip:
-        #     pass
-        # else:
-        #     out[t:b, l:r] = color
+        if np.sum(brush_mask) == 0:
+            continue
 
-    return out
+        color = np.sum(np.reshape(area_under_mask, (-1, 3)), axis=0) / np.sum(
+            brush_mask
+        )
+
+        if perturb:
+            color = np.clip(color + (10 * np.random.rand(3) - 5), 0, 255)
+
+        out = brush_mask * color + (1 - brush_mask) * out
+
+    return np.clip(out, 0, 255).astype(np.uint8)
