@@ -36,7 +36,7 @@ def get_rotated_endpoints(center, length, direction):
 
 
 def paint_image(img, mask, length, radius, angle, perturb, clip, orient):
-    out = np.ones(img.shape)
+    out = np.full(img.shape, 255)
 
     stroke_centers = stroke_list(img, radius)
 
@@ -47,11 +47,26 @@ def paint_image(img, mask, length, radius, angle, perturb, clip, orient):
 
     mask = transform.rotate(mask, angle, True)
 
+    img_gray = cv2.GaussianBlur(cv2.cvtColor(img, cv2.COLOR_RGB2GRAY), (11, 11), 11)
+
     if orient:
-        img_gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
         gx = cv2.Scharr(img_gray, cv2.CV_32F, dx=1, dy=0)
         gy = cv2.Scharr(img_gray, cv2.CV_32F, dx=0, dy=1)
-        directions = np.degrees(np.arctan(gx, gy)) + 90
+        directions = np.degrees(np.arctan2(gx, gy)) + 90
+        print(gx.min(), gx.max(), gy.min(), gy.max())
+        directions = np.where(
+            np.any((np.abs(gx) > 3, np.abs(gy) > 3)), directions, angle
+        )
+
+    if clip:
+        # https://stackoverflow.com/questions/21324950/how-can-i-select-the-best-set-of-parameters-in-the-canny-edge-detection-algorith
+        high, thresh_im = cv2.threshold(
+            img_gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
+        )
+        low = 0.5 * high
+        edges = cv2.Canny(img_gray, low, high)
+        plt.imshow(edges)
+        plt.show()
 
     for center in tqdm(stroke_centers):
         direction = angle
@@ -79,7 +94,11 @@ def paint_image(img, mask, length, radius, angle, perturb, clip, orient):
             ]
             if mask_region.shape != mask.shape:
                 continue
+
             mask_region += mask
+
+            if clip and edges[point[1], point[0]]:
+                break
 
         brush_mask = np.clip(np.atleast_3d(brush_mask), 0, 1)
 
@@ -96,5 +115,8 @@ def paint_image(img, mask, length, radius, angle, perturb, clip, orient):
             color = np.clip(color + (10 * np.random.rand(3) - 5), 0, 255)
 
         out = brush_mask * color + (1 - brush_mask) * out
+
+        cv2.imshow("painting", np.clip(out, 0, 255).astype(np.uint8))
+        cv2.waitKey(1)
 
     return np.clip(out, 0, 255).astype(np.uint8)
