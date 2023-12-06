@@ -45,28 +45,25 @@ def paint_image(img, mask, length, radius, angle, perturb, clip, orient):
     else:
         mask = transform.resize(mask, (2 * radius + 1, 2 * radius + 1))
 
-    mask = transform.rotate(mask, angle, True)
-
-    img_gray = cv2.GaussianBlur(cv2.cvtColor(img, cv2.COLOR_RGB2GRAY), (11, 11), 11)
+    blurred = cv2.GaussianBlur(img, (5, 5), 5)
 
     if orient:
+        img_gray = cv2.GaussianBlur(cv2.cvtColor(img, cv2.COLOR_RGB2GRAY), (11, 11), 11)
         gx = cv2.Scharr(img_gray, cv2.CV_32F, dx=1, dy=0)
         gy = cv2.Scharr(img_gray, cv2.CV_32F, dx=0, dy=1)
-        directions = np.degrees(np.arctan2(gx, gy)) + 90
-        print(gx.min(), gx.max(), gy.min(), gy.max())
+        directions = np.degrees(np.arctan2(gx, gy))
         directions = np.where(
-            np.any((np.abs(gx) > 3, np.abs(gy) > 3)), directions, angle
+            np.any((np.abs(gx) > 10, np.abs(gy) > 10)), directions, angle
         )
 
     if clip:
+        img_gray = cv2.GaussianBlur(cv2.cvtColor(img, cv2.COLOR_RGB2GRAY), (5, 5), 5)
         # https://stackoverflow.com/questions/21324950/how-can-i-select-the-best-set-of-parameters-in-the-canny-edge-detection-algorith
         high, thresh_im = cv2.threshold(
             img_gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
         )
         low = 0.5 * high
         edges = cv2.Canny(img_gray, low, high)
-        plt.imshow(edges)
-        plt.show()
 
     for center in tqdm(stroke_centers):
         direction = angle
@@ -102,21 +99,17 @@ def paint_image(img, mask, length, radius, angle, perturb, clip, orient):
 
         brush_mask = np.clip(np.atleast_3d(brush_mask), 0, 1)
 
-        area_under_mask = brush_mask * img
-
         if np.sum(brush_mask) == 0:
             continue
 
-        color = np.sum(np.reshape(area_under_mask, (-1, 3)), axis=0) / np.sum(
-            brush_mask
-        )
+        color = blurred[center[1], center[0]]
 
         if perturb:
             color = np.clip(color + (10 * np.random.rand(3) - 5), 0, 255)
 
         out = brush_mask * color + (1 - brush_mask) * out
 
-        cv2.imshow("painting", np.clip(out, 0, 255).astype(np.uint8))
-        cv2.waitKey(1)
+        # cv2.imshow("painting", np.clip(out, 0, 255).astype(np.uint8))
+        # cv2.waitKey(1)
 
     return np.clip(out, 0, 255).astype(np.uint8)
