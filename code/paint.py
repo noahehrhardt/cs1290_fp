@@ -19,22 +19,6 @@ def stroke_list(img, radius):
     return coordinates
 
 
-def get_rotated_endpoints(center, length, direction):
-    cx, cy = center[0], center[1]
-
-    x1 = cx - length // 2
-    x2 = cx + length // 2
-
-    cos = np.cos(np.radians(direction))
-    sin = np.sin(np.radians(direction))
-    rotation = np.array([[cos, sin], [-sin, cos]])
-
-    end1 = (rotation @ [x1 - cx, 0] + [cx, cy]).astype(np.int32)
-    end2 = (rotation @ [x2 - cx, 0] + [cx, cy]).astype(np.int32)
-
-    return end1, end2
-
-
 def generate_stroke_sizes(mask, length, radius):
     strokes = {}
     step_size = 1
@@ -53,7 +37,38 @@ def generate_stroke_sizes(mask, length, radius):
         strokes[stroke_len] = np.clip(stroke_mask, 0, 1)
         size += step_size
 
-    return strokes
+    return step_size, strokes
+
+
+def get_canny_edges(img):
+    img_gray = cv2.GaussianBlur(cv2.cvtColor(img, cv2.COLOR_RGB2GRAY), (5, 5), 5)
+    # https://stackoverflow.com/questions/21324950/how-can-i-select-the-best-set-of-parameters-in-the-canny-edge-detection-algorith
+    high, thresh_im = cv2.threshold(
+        img_gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
+    )
+    low = 0.5 * high
+    edges = cv2.Canny(img_gray, low, high)
+    return edges
+
+
+def dist_to_edge(center, length, direction, edges):
+    line_x = np.arange(0, length) - length // 2
+    line_y = line_x * np.sin(np.radians(direction))
+    line_x = np.int32(line_x + center[0])
+    line_y = np.int32(line_y + center[1])
+    line = np.zeros(edges.shape)
+    line[line_y, line_x] = 1
+    hit_edges = np.argwhere((line * edges) > 0)
+    if hit_edges.shape[0] > 0:
+        return np.sqrt(
+            np.min(
+                np.sum(
+                    np.square(hit_edges - [center[1], center[0]]),
+                    axis=-1,
+                )
+            )
+        )
+    return -1
 
 
 def paint_image(img, mask, length, radius, angle, perturb, clip, orient):
@@ -66,7 +81,7 @@ def paint_image(img, mask, length, radius, angle, perturb, clip, orient):
     else:
         mask = transform.resize(mask, (2 * radius + 1, 2 * radius + 1))
 
-    strokes = generate_stroke_sizes(mask, length, radius)
+    step_size, strokes = generate_stroke_sizes(mask, length, radius)
 
     blurred = cv2.GaussianBlur(img, (5, 5), 5)
 
@@ -80,41 +95,43 @@ def paint_image(img, mask, length, radius, angle, perturb, clip, orient):
         )
 
     if clip:
-        img_gray = cv2.GaussianBlur(cv2.cvtColor(img, cv2.COLOR_RGB2GRAY), (5, 5), 5)
-        # https://stackoverflow.com/questions/21324950/how-can-i-select-the-best-set-of-parameters-in-the-canny-edge-detection-algorith
-        high, thresh_im = cv2.threshold(
-            img_gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
-        )
-        low = 0.5 * high
-        edges = cv2.Canny(img_gray, low, high)
+        edges = get_canny_edges(img)
 
     for center in tqdm(stroke_centers):
+        # just skip anything close to the edges for now
         if (
-            center[1] < length
-            or center[1] > img.shape[0] - length - 1
-            or center[0] < length
-            or center[0] > img.shape[1] - length
+            center[1] < length * 1.5
+            or center[1] > img.shape[0] - length * 1.5
+            or center[0] < length * 1.5
+            or center[0] > img.shape[1] - length * 1.5
         ):
             continue
 
         direction = angle
-
         if orient:
             direction = directions[center[1], center[0]]
-
         if perturb:
             direction += int(30 * np.random.rand()) - 15
 
-        brush_mask = np.zeros((img.shape[0], img.shape[1]))
+        stroke_len = length
+        if clip:
+            closest_edge_dist = dist_to_edge(center, length, direction, edges)
+            if closest_edge_dist > -1:
+                if closest_edge_dist < step_size:
+                    stroke_len = step_size
+                else:
+                    stroke_len = int(int(closest_edge_dist / step_size) * step_size)
 
-        rotated_stroke = transform.rotate(strokes[length], direction, True)
+        rotated_stroke = transform.rotate(strokes[stroke_len], direction, True)
+
         height, width = rotated_stroke.shape
         mask_left = center[0] - width // 2
         mask_top = center[1] - height // 2
+
+        brush_mask = np.zeros((img.shape[0], img.shape[1]))
         brush_mask[
             mask_top : mask_top + height, mask_left : mask_left + width
         ] = rotated_stroke
-
         brush_mask = np.atleast_3d(brush_mask)
 
         color = blurred[center[1], center[0]]
