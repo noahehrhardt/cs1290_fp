@@ -128,18 +128,18 @@ def paint_image(img, mask, length, radius, angle, perturb, clip, orient):
         mask_left = center[0] - width // 2
         mask_top = center[1] - height // 2
 
-        brush_mask = np.zeros((img.shape[0], img.shape[1]))
-        brush_mask[
-            mask_top : mask_top + height, mask_left : mask_left + width
-        ] = rotated_stroke
-        brush_mask = np.atleast_3d(brush_mask)
+        rotated_stroke = np.atleast_3d(rotated_stroke)
 
         color = blurred[center[1], center[0]]
 
         if perturb:
             color = np.clip(color + (20 * np.random.rand() - 10), 0, 255)
 
-        out = brush_mask * color + (1 - brush_mask) * out
+        out[mask_top : mask_top + height, mask_left : mask_left + width] = (
+            rotated_stroke * color
+            + (1 - rotated_stroke)
+            * out[mask_top : mask_top + height, mask_left : mask_left + width]
+        )
 
         # cv2.imshow("painting", np.clip(out, 0, 255).astype(np.uint8))
         # cv2.waitKey(1)
