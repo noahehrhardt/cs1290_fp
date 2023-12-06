@@ -35,6 +35,27 @@ def get_rotated_endpoints(center, length, direction):
     return end1, end2
 
 
+def generate_stroke_sizes(mask, length, radius):
+    strokes = {}
+    step_size = 1
+
+    if length > 10:
+        step_size = length / 10
+
+    side_len = 2 * radius + 1
+
+    size = step_size
+    while size <= length:
+        stroke_len = int(size)
+        stroke_mask = np.zeros((2 * radius + 1, stroke_len + 2 * radius))
+        for i in range(stroke_len):
+            stroke_mask[0:side_len, i : i + side_len] += mask
+        strokes[stroke_len] = np.clip(stroke_mask, 0, 1)
+        size += step_size
+
+    return strokes
+
+
 def paint_image(img, mask, length, radius, angle, perturb, clip, orient):
     out = np.full(img.shape, 255)
 
@@ -44,6 +65,8 @@ def paint_image(img, mask, length, radius, angle, perturb, clip, orient):
         mask = np.ones((2 * radius + 1, 2 * radius + 1))
     else:
         mask = transform.resize(mask, (2 * radius + 1, 2 * radius + 1))
+
+    strokes = generate_stroke_sizes(mask, length, radius)
 
     blurred = cv2.GaussianBlur(img, (5, 5), 5)
 
@@ -66,6 +89,14 @@ def paint_image(img, mask, length, radius, angle, perturb, clip, orient):
         edges = cv2.Canny(img_gray, low, high)
 
     for center in tqdm(stroke_centers):
+        if (
+            center[1] < length
+            or center[1] > img.shape[0] - length - 1
+            or center[0] < length
+            or center[0] > img.shape[1] - length
+        ):
+            continue
+
         direction = angle
 
         if orient:
@@ -74,38 +105,22 @@ def paint_image(img, mask, length, radius, angle, perturb, clip, orient):
         if perturb:
             direction += int(30 * np.random.rand()) - 15
 
-        end1, end2 = get_rotated_endpoints(center, length, direction)
-        diff = end2 - end1
-
         brush_mask = np.zeros((img.shape[0], img.shape[1]))
 
-        num_steps = max(abs(diff[0]), abs(diff[1]))
-        step_size = diff / num_steps
-        for i in range(num_steps):
-            point = (end1 + i * step_size).astype(np.int32)
-            mask_size = mask.shape[0]
-            mask_left = point[0] - mask_size // 2
-            mask_top = point[1] - mask_size // 2
-            mask_region = brush_mask[
-                mask_top : mask_top + mask_size, mask_left : mask_left + mask_size
-            ]
-            if mask_region.shape != mask.shape:
-                continue
+        rotated_stroke = transform.rotate(strokes[length], direction, True)
+        height, width = rotated_stroke.shape
+        mask_left = center[0] - width // 2
+        mask_top = center[1] - height // 2
+        brush_mask[
+            mask_top : mask_top + height, mask_left : mask_left + width
+        ] = rotated_stroke
 
-            mask_region += mask
-
-            if clip and edges[point[1], point[0]]:
-                break
-
-        brush_mask = np.clip(np.atleast_3d(brush_mask), 0, 1)
-
-        if np.sum(brush_mask) == 0:
-            continue
+        brush_mask = np.atleast_3d(brush_mask)
 
         color = blurred[center[1], center[0]]
 
         if perturb:
-            color = np.clip(color + (10 * np.random.rand(3) - 5), 0, 255)
+            color = np.clip(color + (20 * np.random.rand() - 10), 0, 255)
 
         out = brush_mask * color + (1 - brush_mask) * out
 
