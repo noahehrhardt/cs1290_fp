@@ -5,11 +5,12 @@ from skimage import transform
 from tqdm import tqdm
 
 
-def stroke_list(img, radius):
-    h, w, _ = img.shape
+def stroke_list(shape, radius):
+    h, w, _ = shape
+    diameter = 2 * radius + 1
 
-    x_range = np.linspace(0, w - 1, (w - 1) // radius)
-    y_range = np.linspace(0, h - 1, (h - 1) // radius)
+    x_range = np.linspace(diameter, w - diameter - 1, (w - 2 * diameter - 1) // 2)
+    y_range = np.linspace(diameter, h - diameter - 1, (h - 2 * diameter - 1) // 2)
 
     x_grid, y_grid = np.meshgrid(x_range, y_range)
 
@@ -23,8 +24,8 @@ def generate_stroke_sizes(mask, length, radius):
     strokes = {}
     step_size = 1
 
-    if length > 10:
-        step_size = length / 10
+    if length > 20:
+        step_size = length / 20
 
     side_len = 2 * radius + 1
 
@@ -40,14 +41,17 @@ def generate_stroke_sizes(mask, length, radius):
     return step_size, strokes
 
 
-def get_canny_edges(img):
+def get_canny_edges(img, radius):
     img_gray = cv2.GaussianBlur(cv2.cvtColor(img, cv2.COLOR_RGB2GRAY), (5, 5), 5)
     # https://stackoverflow.com/questions/21324950/how-can-i-select-the-best-set-of-parameters-in-the-canny-edge-detection-algorith
-    high, thresh_im = cv2.threshold(
-        img_gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
-    )
+    high, _ = cv2.threshold(img_gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
     low = 0.5 * high
     edges = cv2.Canny(img_gray, low, high)
+    diameter = 2 * radius + 1
+    edges[diameter, :] = 255
+    edges[-diameter, :] = 255
+    edges[:, diameter] = 255
+    edges[:, -diameter] = 255
     return edges
 
 
@@ -56,6 +60,15 @@ def dist_to_edge(center, length, direction, edges):
     line_y = line_x * np.sin(np.radians(direction))
     line_x = np.int32(line_x + center[0])
     line_y = np.int32(line_y + center[1])
+    valid_coords = (
+        (line_x >= 0)
+        & (line_x < edges.shape[1])
+        & (line_y >= 0)
+        & (line_y < edges.shape[0])
+    )
+
+    line_x = line_x[valid_coords]
+    line_y = line_y[valid_coords]
 
     hit_idx = np.argwhere(edges[line_y, line_x] > 0)
     hit_edges = np.concatenate((line_x[hit_idx], line_y[hit_idx]), axis=1)
@@ -74,13 +87,14 @@ def dist_to_edge(center, length, direction, edges):
 
 def paint_image(img, mask, length, radius, angle, perturb, clip, orient):
     out = np.full(img.shape, 255)
+    diameter = 2 * radius + 1
 
-    stroke_centers = stroke_list(img, radius)
+    stroke_centers = stroke_list(img.shape, radius)
 
     if mask is None:
-        mask = np.ones((2 * radius + 1, 2 * radius + 1))
+        mask = np.ones((diameter, diameter))
     else:
-        mask = transform.resize(mask, (2 * radius + 1, 2 * radius + 1))
+        mask = transform.resize(mask, (diameter, diameter))
 
     step_size, strokes = generate_stroke_sizes(mask, length, radius)
 
@@ -96,18 +110,9 @@ def paint_image(img, mask, length, radius, angle, perturb, clip, orient):
         )
 
     if clip:
-        edges = get_canny_edges(img)
+        edges = get_canny_edges(img, radius)
 
     for center in tqdm(stroke_centers):
-        # just skip anything close to the edges for now
-        if (
-            center[1] < length * 1.5
-            or center[1] > img.shape[0] - length * 1.5
-            or center[0] < length * 1.5
-            or center[0] > img.shape[1] - length * 1.5
-        ):
-            continue
-
         direction = angle
         if orient:
             direction = directions[center[1], center[0]]
@@ -119,7 +124,7 @@ def paint_image(img, mask, length, radius, angle, perturb, clip, orient):
             closest_edge_dist = dist_to_edge(center, length, direction, edges)
             if closest_edge_dist > -1:
                 if closest_edge_dist < step_size:
-                    stroke_len = step_size
+                    stroke_len = int(step_size)
                 else:
                     stroke_len = int(int(closest_edge_dist / step_size) * step_size)
 
