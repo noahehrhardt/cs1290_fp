@@ -56,14 +56,15 @@ def dist_to_edge(center, length, direction, edges):
     line_y = line_x * np.sin(np.radians(direction))
     line_x = np.int32(line_x + center[0])
     line_y = np.int32(line_y + center[1])
-    line = np.zeros(edges.shape)
-    line[line_y, line_x] = 1
-    hit_edges = np.argwhere((line * edges) > 0)
+
+    hit_idx = np.argwhere(edges[line_y, line_x] > 0)
+    hit_edges = np.concatenate((line_x[hit_idx], line_y[hit_idx]), axis=1)
+
     if hit_edges.shape[0] > 0:
         return np.sqrt(
             np.min(
                 np.sum(
-                    np.square(hit_edges - [center[1], center[0]]),
+                    np.square(hit_edges - center),
                     axis=-1,
                 )
             )
