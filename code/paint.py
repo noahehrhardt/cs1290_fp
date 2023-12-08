@@ -1,14 +1,12 @@
 import cv2
-import matplotlib.pyplot as plt
 import numpy as np
+from scipy import interpolate
 from skimage import transform
 from tqdm import tqdm
-from scipy import interpolate
 
 
-def stroke_list(shape, radius):
+def stroke_list(shape, diameter):
     h, w, _ = shape
-    diameter = 2 * radius + 1
 
     x_range = np.linspace(diameter, w - diameter - 1, (w - 2 * diameter - 1) // 2)
     y_range = np.linspace(diameter, h - diameter - 1, (h - 2 * diameter - 1) // 2)
@@ -21,34 +19,40 @@ def stroke_list(shape, radius):
     return coordinates
 
 
-def generate_stroke_sizes(mask, length, radius):
+def generate_stroke_sizes(mask, length, diameter):
     strokes = {}
     step_size = 1
 
     if length > 20:
         step_size = length / 20
 
-    side_len = 2 * radius + 1
-
     size = step_size
     while size <= length:
         stroke_len = int(size)
-        stroke_mask = np.zeros((2 * radius + 1, stroke_len + 2 * radius))
+        stroke_mask = np.zeros((diameter, stroke_len + diameter))
+        addition = mask.copy()
+        if size == step_size:
+            addition[addition < 0.2] = 0.2
         for i in range(stroke_len):
-            stroke_mask[0:side_len, i : i + side_len] += mask
+            stroke_mask[0:diameter, i : i + diameter] += addition
+
         strokes[stroke_len] = np.clip(stroke_mask, 0, 1)
         size += step_size
 
     return step_size, strokes
 
 
-def get_canny_edges(img, radius):
-    img_gray = cv2.GaussianBlur(cv2.cvtColor(img, cv2.COLOR_RGB2GRAY), (5, 5), 5)
-    # https://stackoverflow.com/questions/21324950/how-can-i-select-the-best-set-of-parameters-in-the-canny-edge-detection-algorith
-    high, _ = cv2.threshold(img_gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
-    low = 0.5 * high
-    edges = cv2.Canny(img_gray, low, high)
-    diameter = 2 * radius + 1
+def get_canny_edges(img, diameter, clip):
+    if clip:
+        img_gray = cv2.GaussianBlur(cv2.cvtColor(img, cv2.COLOR_RGB2GRAY), (5, 5), 5)
+        # https://stackoverflow.com/questions/21324950/how-can-i-select-the-best-set-of-parameters-in-the-canny-edge-detection-algorith
+        high, _ = cv2.threshold(img_gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        low = 0.5 * high
+        edges = cv2.Canny(img_gray, low, high)
+
+    else:
+        edges = np.zeros((img.shape[0], img.shape[1]))
+
     edges[diameter, :] = 255
     edges[-diameter, :] = 255
     edges[:, diameter] = 255
@@ -110,14 +114,14 @@ def gradient_directions(img, interp):
             x_important,
             x_vals,
             x_needed,
-            method="cubic",
+            method="linear",
             fill_value=0,
         )
         y_interp = interpolate.griddata(
             y_important,
             y_vals,
             y_needed,
-            method="cubic",
+            method="linear",
             fill_value=0,
         )
 
@@ -129,42 +133,28 @@ def gradient_directions(img, interp):
     return directions
 
 
-def paint_image(img, mask, length, radius, angle, perturb, clip, orient, interp):
-    out = np.full(img.shape, 255)
-    diameter = 2 * radius + 1
-
-    stroke_centers = stroke_list(img.shape, radius)
-
-    if mask is None:
-        mask = np.ones((diameter, diameter))
-    else:
-        mask = transform.resize(mask, (diameter, diameter))
-
-    step_size, strokes = generate_stroke_sizes(mask, length, radius)
-
+def paint(img, out, stroke_centers, strokes, step_size, length, diameter, options):
     blurred = cv2.GaussianBlur(img, (5, 5), 5)
 
-    if orient:
-        directions = gradient_directions(img, interp)
+    if options.orient:
+        directions = gradient_directions(img, options.interp)
 
-    if clip:
-        edges = get_canny_edges(img, radius)
+    edges = get_canny_edges(img, diameter, options.clip)
 
     for i, center in enumerate(tqdm(stroke_centers)):
-        direction = angle
-        if orient:
+        direction = options.angle
+        if options.orient:
             direction = directions[center[1], center[0]]
-        if perturb:
+        if options.perturb:
             direction += int(30 * np.random.rand()) - 15
 
         stroke_len = length
-        if clip:
-            closest_edge_dist = dist_to_edge(center, length, direction, edges)
-            if closest_edge_dist > -1:
-                if closest_edge_dist < step_size:
-                    stroke_len = int(step_size)
-                else:
-                    stroke_len = int(int(closest_edge_dist / step_size) * step_size)
+        closest_edge_dist = dist_to_edge(center, length, direction, edges)
+        if closest_edge_dist > -1:
+            if closest_edge_dist < step_size:
+                stroke_len = int(step_size)
+            else:
+                stroke_len = int(int(closest_edge_dist / step_size) * step_size)
 
         rotated_stroke = transform.rotate(strokes[stroke_len], direction, True)
 
@@ -176,7 +166,7 @@ def paint_image(img, mask, length, radius, angle, perturb, clip, orient, interp)
 
         color = blurred[center[1], center[0]]
 
-        if perturb:
+        if options.perturb:
             color = np.clip(color + (20 * np.random.rand() - 10), 0, 255)
 
         out[mask_top : mask_top + height, mask_left : mask_left + width] = (
@@ -185,8 +175,8 @@ def paint_image(img, mask, length, radius, angle, perturb, clip, orient, interp)
             * out[mask_top : mask_top + height, mask_left : mask_left + width]
         )
 
-        # if i % 1000 == 0:
-        #     cv2.imshow("painting", np.clip(out, 0, 255).astype(np.uint8))
-        #     cv2.waitKey(1)
+        if options.view and i % 1000 == 0:
+            cv2.imshow("painting", np.clip(out, 0, 255).astype(np.uint8))
+            cv2.waitKey(1)
 
     return np.clip(out, 0, 255).astype(np.uint8)
