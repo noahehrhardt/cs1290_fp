@@ -86,7 +86,50 @@ def dist_to_edge(center, length, direction, edges):
     return -1
 
 
-def paint_image(img, mask, length, radius, angle, perturb, clip, orient):
+def gradient_directions(img, interp):
+    img_gray = cv2.GaussianBlur(cv2.cvtColor(img, cv2.COLOR_RGB2GRAY), (11, 11), 11)
+    gx = cv2.GaussianBlur(cv2.Scharr(img_gray, cv2.CV_32F, dx=1, dy=0), (5, 5), 5)
+    gy = cv2.GaussianBlur(cv2.Scharr(img_gray, cv2.CV_32F, dx=0, dy=1), (5, 5), 5)
+
+    if interp:
+        threshold = max(np.mean(np.abs(gx)), np.mean(np.abs(gy)))
+
+        gx[np.abs(gx) < threshold] = 0
+        gy[np.abs(gy) < threshold] = 0
+
+        x_important = np.nonzero(gx)
+        y_important = np.nonzero(gy)
+
+        x_needed = np.nonzero(gx == 0)
+        y_needed = np.nonzero(gy == 0)
+
+        x_vals = gx[x_important]
+        y_vals = gy[y_important]
+
+        x_interp = interpolate.griddata(
+            x_important,
+            x_vals,
+            x_needed,
+            method="cubic",
+            fill_value=0,
+        )
+        y_interp = interpolate.griddata(
+            y_important,
+            y_vals,
+            y_needed,
+            method="cubic",
+            fill_value=0,
+        )
+
+        gx[x_needed] = x_interp
+        gy[y_needed] = y_interp
+
+    directions = np.degrees(np.arctan2(gx, gy))
+
+    return directions
+
+
+def paint_image(img, mask, length, radius, angle, perturb, clip, orient, interp):
     out = np.full(img.shape, 255)
     diameter = 2 * radius + 1
 
@@ -102,43 +145,12 @@ def paint_image(img, mask, length, radius, angle, perturb, clip, orient):
     blurred = cv2.GaussianBlur(img, (5, 5), 5)
 
     if orient:
-        img_gray = cv2.GaussianBlur(cv2.cvtColor(img, cv2.COLOR_RGB2GRAY), (11, 11), 11)
-        gx = cv2.Scharr(img_gray, cv2.CV_32F, dx=1, dy=0)
-        gy = cv2.Scharr(img_gray, cv2.CV_32F, dx=0, dy=1)
-
-        gx[abs(gx) < 50] = 0
-        gy[abs(gy) < 50] = 0
-        # maybe check that both less than 10
-
-        x_important = np.nonzero(gx)
-        y_important = np.nonzero(gy)
-
-        x_vals = gx[x_important[0], x_important[1]]
-        y_vals = gy[y_important[0], y_important[1]]
-
-        plt.imshow(gx, cmap='gray')
-        plt.show()
-
-        gx_interp = interpolate.griddata(x_important, x_vals, (stroke_centers[:, 1], stroke_centers[:, 0]), method='cubic', fill_value=0)
-        gy_interp = interpolate.griddata(y_important, y_vals, (stroke_centers[:, 1], stroke_centers[:, 0]), method='cubic', fill_value=0)
-
-        gx[stroke_centers[:, 1], stroke_centers[:, 0]] = gx_interp
-        gy[stroke_centers[:, 1], stroke_centers[:, 0]] = gy_interp
-
-        plt.imshow(gx, cmap='gray')
-        plt.show()
-
-        #directions = np.degrees(np.arctan2(gx, gy))
-        directions = np.degrees(np.arctan2(gx, gy))
-
-        '''directions = np.where(
-            np.any((np.abs(gx) > 10, np.abs(gy) > 10)), directions, angle
-        )'''
+        directions = gradient_directions(img, interp)
 
     if clip:
         edges = get_canny_edges(img, radius)
 
-    for center in tqdm(stroke_centers):
+    for i, center in enumerate(tqdm(stroke_centers)):
         direction = angle
         if orient:
             direction = directions[center[1], center[0]]
@@ -173,7 +185,8 @@ def paint_image(img, mask, length, radius, angle, perturb, clip, orient):
             * out[mask_top : mask_top + height, mask_left : mask_left + width]
         )
 
-        # cv2.imshow("painting", np.clip(out, 0, 255).astype(np.uint8))
-        # cv2.waitKey(1)
+        # if i % 1000 == 0:
+        #     cv2.imshow("painting", np.clip(out, 0, 255).astype(np.uint8))
+        #     cv2.waitKey(1)
 
     return np.clip(out, 0, 255).astype(np.uint8)

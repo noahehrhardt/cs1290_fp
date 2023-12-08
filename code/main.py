@@ -32,6 +32,7 @@ def main(args):
         args.perturb,
         args.clip,
         args.orient,
+        args.interp,
     )
 
     if not os.path.isdir("../results"):
@@ -54,18 +55,30 @@ if __name__ == "__main__":
     parser.add_argument("input", help="Input img/video filepath")
     parser.add_argument("-m", "--mask", help="Brush mask")
     parser.add_argument(
-        "-l", "--length", type=int, default=15, help="Brush stroke length"
+        "-l", "--length", type=int, default=20, help="Brush stroke length"
     )
-    parser.add_argument("-r", "--radius", type=int, default=3, help="Brush radius")
+    parser.add_argument("-r", "--radius", type=int, default=4, help="Brush radius")
     parser.add_argument("-a", "--angle", type=int, default=30, help="Brush angle")
     parser.add_argument(
-        "-p", "--perturb", action="store_true", help="Randomly perturb stroke colors"
+        "-p",
+        "--perturb",
+        action="store_false",
+        help="Don't randomly perturb stroke colors and angles",
     )
     parser.add_argument(
-        "-c", "--clip", action="store_true", help="Clip strokes at edges"
+        "-c", "--clip", action="store_false", help="Clip strokes at edges"
     )
     parser.add_argument(
-        "-o", "--orient", action="store_true", help="Orient strokes based on gradients"
+        "-o",
+        "--orient",
+        action="store_false",
+        help="Don't orient strokes based on gradients",
+    )
+    parser.add_argument(
+        "-i",
+        "--interp",
+        action="store_false",
+        help="Don't interpolate stroke gradient directions",
     )
 
     args = parser.parse_args()
