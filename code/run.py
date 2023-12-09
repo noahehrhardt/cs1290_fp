@@ -75,4 +75,5 @@ def paint_video(vid, mask, options):
         old_gray = frame_gray.copy()
         p0 = good_new.reshape(-1,1,2)
     
+    # return list of painted frames:
     return out_vid
