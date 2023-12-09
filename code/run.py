@@ -60,7 +60,11 @@ def paint_video(vid, mask, options):
 
 
     while(1):
-        ret,frame = vidcap.read()
+        ret, frame = vidcap.read()
+        if not ret:
+            print("Exiting video capture")
+            break
+
         frame_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
         # might need to switch points from (x, y) to (y, x):
