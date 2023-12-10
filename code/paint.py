@@ -142,6 +142,14 @@ def paint(img, out, stroke_centers, strokes, step_size, length, diameter, option
     edges = get_canny_edges(img, diameter, options.clip)
 
     for i, center in enumerate(tqdm(stroke_centers)):
+        if (
+            center[0] < diameter
+            or center[1] < diameter
+            or center[0] > img.shape[1] - diameter
+            or center[1] > img.shape[0] - diameter
+        ):
+            continue
+
         direction = options.angle
         if options.orient:
             direction = directions[center[1], center[0]]
