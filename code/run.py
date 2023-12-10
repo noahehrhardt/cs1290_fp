@@ -86,6 +86,7 @@ def paint_video(vid, out_path, mask, options):
     p0 = p0.reshape(-1, 1, 2)
     print(f"reshaped: {p0.shape}")
 
+    prev_painted = out
     while 1:
         ret, frame = vidcap.read()
         if not ret:
@@ -106,15 +107,20 @@ def paint_video(vid, out_path, mask, options):
         # print(f'max x: {np.max(p1[:, 0])}, max y: {np.max(p1[:, 1])}')
 
         good_new = p1[st == 1]
-        good_new = good_new.reshape(-1, 2)
+        good_old = p0[st == 1]
+        # good_new = good_new.reshape(-1, 2)
         # good_new = good_new.reshape(-1,2,1)
         # print(f'pass in shape: {good_new.shape}')
 
-        out = np.full(frame.shape, 255)
+        new_centers = (
+            np.concatenate((good_new, good_old)).astype(np.int32).reshape(-1, 2)
+        )
+
+        # out = np.full(frame.shape, 255)
         out = paint(
             frame,
-            out,
-            good_new.astype(np.int32),
+            prev_painted,
+            new_centers,
             strokes,
             step_size,
             length,
@@ -123,8 +129,10 @@ def paint_video(vid, out_path, mask, options):
         )
         out_vid.write(out)
 
+        prev_painted = out
+
         old_gray = frame_gray.copy()
-        p0 = good_new.reshape(-1, 1, 2)
+        # p0 = good_new.reshape(-1, 1, 2)
 
     vidcap.release()
     out_vid.release()
