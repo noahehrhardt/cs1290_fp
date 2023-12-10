@@ -23,12 +23,21 @@ def paint_image(img, mask, options):
     )
 
 
-def paint_video(vid, mask, options):
+def paint_video(vid, out_path, mask, options):
     """
     I mostly followed this tutorial: https://opencv24-python-tutorials.readthedocs.io/en/latest/py_tutorials/py_video/py_lucas_kanade/py_lucas_kanade.html
     and these docs: https://docs.opencv.org/3.4/dc/d6b/group__video__track.html
+
+    I used this to download youtube videos: https://github.com/ytdl-org/youtube-dl/blob/master/README.md#readme
+    
+    vid should be a filepath
     """
     vidcap = cv2.VideoCapture(vid)
+
+    fourcc = cv2.VideoWriter_fourcc(*'MJPG') # mp4 format
+    out_vid = cv2.VideoWriter(out_path, fourcc, 
+                              vidcap.get(cv2.CAP_PROP_FPS), 
+                              (vidcap.get(cv2.CAP_PROP_FRAME_WIDTH),  vidcap.get(cv2.CAP_PROP_FRAME_HEIGHT)))
 
     # Parameters for lucas kanade optical flow
     lk_params = dict( winSize  = (15,15),
@@ -42,7 +51,6 @@ def paint_video(vid, mask, options):
     length, radius = options.length, options.radius
 
     out = np.full(prev_frame.shape, 255)
-    out_vid = []
     diameter = 2 * radius + 1
 
     p0 = stroke_list(prev_frame.shape, diameter)
@@ -56,7 +64,7 @@ def paint_video(vid, mask, options):
 
     # every argument except for the first three will be the same for each frame
     out = paint(prev_frame, out, p0, strokes, step_size, length, diameter, options)
-    out_vid.append(out)
+    out_vid.write(out)
 
 
     while(1):
@@ -74,10 +82,10 @@ def paint_video(vid, mask, options):
 
         out = np.full(frame.shape, 255)
         out = paint(frame, out, good_new, strokes, step_size, length, diameter, options)
-        out_vid.append(out)
+        out_vid.write(out)
 
         old_gray = frame_gray.copy()
         p0 = good_new.reshape(-1,1,2)
     
-    # return list of painted frames:
-    return out_vid
+    vidcap.release()
+    out_vid.release()

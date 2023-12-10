@@ -3,7 +3,7 @@ import os
 import sys
 
 import cv2
-from run import paint_image
+from run import paint_image, paint_video
 
 
 def main(args):
@@ -32,18 +32,23 @@ def main(args):
     angle = "" if args.orient else f"_a{args.angle}"
     out_name = f"{in_name}_{mask_name}_l{args.length}_r{args.radius}{angle}{f'_{config}' if config != '' else ''}"
 
+    if not os.path.isdir("../results"):
+        os.mkdir("../results")
+
     if not video:
         in_img = cv2.imread(in_path)
         out_img = paint_image(in_img, mask, args)
-
-        if not os.path.isdir("../results"):
-            os.mkdir("../results")
 
         out_name += ".png"
         cv2.imwrite(
             os.path.join("../results", out_name),
             out_img,
         )
+    else:
+        out_name += ".mp4"
+        out_path = os.path.join("../results", out_name)
+
+        paint_video(in_path, out_path, mask, args)
 
     print("Wrote output to", out_name)
 
