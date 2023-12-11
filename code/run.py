@@ -23,6 +23,45 @@ def paint_image(img, mask, options):
         img, out, stroke_centers, strokes, step_size, length, diameter, options
     )
 
+# currently assuming points are in shape (n, 2)
+def get_spaced_centers(good_points, original_points, img_shape, spacing_radius):
+    points_to_include = np.ones((original_points.shape[0] + good_points.shape[0], 2))
+    all_points = np.concatenate(original_points, good_points)
+
+    plot = np.zeros(img_shape) # make sure this is 1-D
+    plot[good_points[1], good_points[0]] = 1
+
+    density_radius = spacing_radius // 2
+
+    # remove points from original_points:
+    for i in range(original_points.shape[0]):
+    #for i in range(points_to_include.shape[0]):
+        if i >= original_points.shape[0]:
+            spacing_radius = density_radius
+
+        point = (original_points[i, 1], original_points[i, 0])
+        y_window_bounds = (max(point[0] - spacing_radius, 0), min(point[0] + spacing_radius, plot.shape[0]))
+        x_window_bounds = (max(point[1] - spacing_radius, 0), min(point[1] + spacing_radius, plot.shape[1]))
+
+        points_in_neighborhood = np.sum(plot[y_window_bounds[0] : y_window_bounds[1], x_window_bounds[0] : x_window_bounds[1]])
+
+        # start with assumption that we keep all points
+        if points_in_neighborhood > 0:
+            points_to_include[i, :] = 0
+        else:
+            # only need this if checking for density:
+            plot[point[0], point[1]] = 1
+
+    # delete duplicates:
+    point_dict = {}
+    for i in range(good_points.shape[0]):
+        if good_points[i] in point_dict:
+            points_to_include[original_points.shape[0] + i, :] = 0
+        else:
+            point_dict[good_points[i]] = 1
+    
+    return all_points[points_to_include == 1]
+
 
 def paint_video(vid, out_path, mask, options):
     """
