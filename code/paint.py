@@ -169,6 +169,16 @@ def paint(img, out, stroke_centers, strokes, step_size, length, diameter, option
         height, width = rotated_stroke.shape
         mask_left = center[0] - width // 2
         mask_top = center[1] - height // 2
+        mask_right = mask_left + width
+        mask_bottom = mask_top + height
+
+        if (
+            mask_left < 0
+            or mask_right >= img.shape[1]
+            or mask_top < 0
+            or mask_bottom >= img.shape[0]
+        ):
+            continue
 
         rotated_stroke = np.atleast_3d(rotated_stroke)
 
@@ -177,10 +187,9 @@ def paint(img, out, stroke_centers, strokes, step_size, length, diameter, option
         if options.perturb:
             color = np.clip(color + (20 * np.random.rand() - 10), 0, 255)
 
-        out[mask_top : mask_top + height, mask_left : mask_left + width] = (
+        out[mask_top:mask_bottom, mask_left:mask_right] = (
             rotated_stroke * color
-            + (1 - rotated_stroke)
-            * out[mask_top : mask_top + height, mask_left : mask_left + width]
+            + (1 - rotated_stroke) * out[mask_top:mask_bottom, mask_left:mask_right]
         )
 
         if options.view and i % 1000 == 0:
