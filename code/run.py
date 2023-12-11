@@ -21,29 +21,34 @@ def paint_image(img, mask, options):
 
 # currently assuming points are in shape (n, 2)
 def get_spaced_centers(good_points, original_points, img_shape, spacing_radius):
+    # delete duplicates:
+    u, ind = np.unique(good_points, axis=0, return_index=True)
+    good_points = u[np.argsort(ind)]
+
     points_to_include = np.ones((original_points.shape[0] + good_points.shape[0], 2))
-    all_points = np.concatenate(original_points, good_points)
+    all_points = np.concatenate((original_points, good_points))
+    
+    print(f'# points before: {all_points.shape[0]}')
 
-    plot = np.zeros(img_shape)  # make sure this is 1-D
-    plot[good_points[1], good_points[0]] = 1
+    plot = np.zeros(img_shape, dtype=np.uint8) # make sure this is 1-D
+    plot[good_points[:, 1], good_points[:, 0]] = 1
 
-    density_radius = spacing_radius // 2
+    density_radius = spacing_radius #// 2
 
     # remove points from original_points:
-    for i in range(original_points.shape[0]):
-        # for i in range(points_to_include.shape[0]):
+    #for i in range(original_points.shape[0]):
+    for i in range(points_to_include.shape[0]):
         if i >= original_points.shape[0]:
             spacing_radius = density_radius
 
-        point = (original_points[i, 1], original_points[i, 0])
-        y_window_bounds = (
-            max(point[0] - spacing_radius, 0),
-            min(point[0] + spacing_radius, plot.shape[0]),
-        )
-        x_window_bounds = (
-            max(point[1] - spacing_radius, 0),
-            min(point[1] + spacing_radius, plot.shape[1]),
-        )
+        point = (int(all_points[i, 1]), int(all_points[i, 0]))
+
+        if point[0] < 0 or point[0] >= plot.shape[0] or point[1] < 0 or point[1] >= plot.shape[1]:
+            points_to_include[i, :] = 0
+            continue
+
+        y_window_bounds = (max(point[0] - spacing_radius, 0), min(point[0] + spacing_radius, plot.shape[0] - 1))
+        x_window_bounds = (max(point[1] - spacing_radius, 0), min(point[1] + spacing_radius, plot.shape[1] - 1))
 
         points_in_neighborhood = np.sum(
             plot[
@@ -58,15 +63,7 @@ def get_spaced_centers(good_points, original_points, img_shape, spacing_radius):
         else:
             # only need this if checking for density:
             plot[point[0], point[1]] = 1
-
-    # delete duplicates:
-    point_dict = {}
-    for i in range(good_points.shape[0]):
-        if good_points[i] in point_dict:
-            points_to_include[original_points.shape[0] + i, :] = 0
-        else:
-            point_dict[good_points[i]] = 1
-
+    
     return all_points[points_to_include == 1]
 
 
@@ -105,9 +102,8 @@ def paint_video(vid, out_path, mask, options):
     out = np.full(prev_frame.shape, 255)
     diameter = 2 * radius + 1
 
-    p0 = stroke_list(prev_frame.shape, diameter).astype(np.float32)
-    print(f"default shape: {p0.shape}, default dtype: {p0.dtype}")
-    print(f"max x: {np.max(p0[:, 0])}, max y: {np.max(p0[:, 1])}")
+    grid = stroke_list(prev_frame.shape, diameter).astype(np.float32)
+    p0 = grid
 
     step_size, strokes = generate_stroke_sizes(mask, length, diameter)
 
@@ -125,9 +121,9 @@ def paint_video(vid, out_path, mask, options):
     out_vid.write(out)
 
     p0 = p0.reshape(-1, 1, 2)
-    print(f"reshaped: {p0.shape}")
 
     prev_painted = out
+    new_centers = None
     while 1:
         ret, frame = vidcap.read()
         if not ret:
@@ -136,10 +132,14 @@ def paint_video(vid, out_path, mask, options):
 
         frame_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
+        if new_centers is not None:
+            p0 = get_spaced_centers(new_centers, grid, frame_gray.shape, 1).reshape(-1, 1, 2).astype(np.float32)
+        print(f'# points after: {p0.shape[0]}')
         # might need to switch points from (x, y) to (y, x):
         p1, st, err = cv2.calcOpticalFlowPyrLK(
             old_gray, frame_gray, p0, None, **lk_params
         )
+
         # print(f'output shape: {p1.shape}')
 
         # use following line to keep all points
@@ -156,6 +156,11 @@ def paint_video(vid, out_path, mask, options):
         new_centers = (
             np.concatenate((good_new, good_old)).astype(np.int32).reshape(-1, 2)
         )
+
+        new_centers = new_centers[new_centers[:, 0] >= 0]
+        new_centers = new_centers[new_centers[:, 0] < frame_gray.shape[1]]
+        new_centers = new_centers[new_centers[:, 1] >= 0]
+        new_centers = new_centers[new_centers[:, 1] < frame_gray.shape[0]]
 
         # out = np.full(frame.shape, 255)
         out = paint(
