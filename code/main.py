@@ -48,8 +48,7 @@ def main(args):
         out_name += ".mp4"
         out_path = os.path.join("../results", out_name)
 
-        #paint_video(in_path, out_path, mask, args)
-        optical_flow(in_path, out_path)
+        paint_video(in_path, out_path, mask, args)
 
     print("Wrote output to", out_name)
 
