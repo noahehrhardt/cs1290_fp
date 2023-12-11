@@ -3,7 +3,7 @@ import os
 import sys
 
 import cv2
-from run import paint_image, paint_video
+from run import paint_image, paint_video, optical_flow
 
 
 def main(args):
@@ -48,7 +48,8 @@ def main(args):
         out_name += ".mp4"
         out_path = os.path.join("../results", out_name)
 
-        paint_video(in_path, out_path, mask, args)
+        #paint_video(in_path, out_path, mask, args)
+        optical_flow(in_path, out_path)
 
     print("Wrote output to", out_name)
 

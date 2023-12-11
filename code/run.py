@@ -20,26 +20,22 @@ def paint_image(img, mask, options):
 
 
 # currently assuming points are in shape (n, 2)
-def get_spaced_centers(good_points, original_points, img_shape, spacing_radius):
+def get_spaced_centers(good_points, original_points, img_shape, spacing_radius=1):
     # delete duplicates:
     u, ind = np.unique(good_points, axis=0, return_index=True)
     good_points = u[np.argsort(ind)]
 
     points_to_include = np.ones((original_points.shape[0] + good_points.shape[0], 2))
-    all_points = np.concatenate((original_points, good_points))
+    all_points = np.concatenate((good_points, original_points))
     
     print(f'# points before: {all_points.shape[0]}')
 
     plot = np.zeros(img_shape, dtype=np.uint8) # make sure this is 1-D
     plot[good_points[:, 1], good_points[:, 0]] = 1
 
-    density_radius = spacing_radius #// 2
-
     # remove points from original_points:
     #for i in range(original_points.shape[0]):
-    for i in range(points_to_include.shape[0]):
-        if i >= original_points.shape[0]:
-            spacing_radius = density_radius
+    for i in reversed(range(points_to_include.shape[0])):
 
         point = (int(all_points[i, 1]), int(all_points[i, 0]))
 
@@ -124,6 +120,7 @@ def paint_video(vid, out_path, mask, options):
 
     prev_painted = out
     new_centers = None
+
     while 1:
         ret, frame = vidcap.read()
         if not ret:
@@ -182,3 +179,74 @@ def paint_video(vid, out_path, mask, options):
 
     vidcap.release()
     out_vid.release()
+
+
+def optical_flow(vid, out_path):
+    cap = cv2.VideoCapture(vid)
+
+    # params for ShiTomasi corner detection
+    feature_params = dict( maxCorners = 100,
+                        qualityLevel = 0.3,
+                        minDistance = 7,
+                        blockSize = 7 )
+
+    # Parameters for lucas kanade optical flow
+    lk_params = dict( winSize  = (15,15),
+                    maxLevel = 2,
+                    criteria = (cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03))
+
+    # Create some random colors
+    color = np.random.randint(0,255,(100,3))
+
+    # Take first frame and find corners in it
+    ret, old_frame = cap.read()
+    old_gray = cv2.cvtColor(old_frame, cv2.COLOR_BGR2GRAY)
+    p0 = cv2.goodFeaturesToTrack(old_gray, mask = None, **feature_params)
+
+    # Create a mask image for drawing purposes
+    mask = np.zeros_like(old_frame)
+
+    fourcc = cv2.VideoWriter_fourcc(*"MJPG")  # mp4 format
+    out_vid = cv2.VideoWriter(
+        out_path,
+        fourcc,
+        cap.get(cv2.CAP_PROP_FPS),
+        (old_frame.shape[1], old_frame.shape[0]),
+    )
+
+    while(1):
+        ret,frame = cap.read()
+        frame_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+        # calculate optical flow
+        p1, st, err = cv2.calcOpticalFlowPyrLK(old_gray, frame_gray, p0, None, **lk_params)
+
+        # Select good points
+        good_new = p1[st==1]
+        good_old = p0[st==1]
+
+        # draw the tracks
+        for i,(new,old) in enumerate(zip(good_new,good_old)):
+            a,b = new.ravel()
+            c,d = old.ravel()
+            a = int(a)
+            b = int(b)
+            c = int(c)
+            d = int(d)
+            mask = cv2.line(mask, (a,b),(c,d), color[i].tolist(), 2)
+            frame = cv2.circle(frame,(a,b),5,color[i].tolist(),-1)
+        img = cv2.add(frame,mask)
+
+        out_vid.write(img)
+
+        cv2.imshow('frame',img)
+        k = cv2.waitKey(30) & 0xff
+        if k == 27:
+            break
+
+        # Now update the previous frame and previous points
+        old_gray = frame_gray.copy()
+        p0 = good_new.reshape(-1,1,2)
+
+    cv2.destroyAllWindows()
+    cap.release()
