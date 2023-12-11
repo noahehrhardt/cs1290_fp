@@ -146,7 +146,10 @@ def paint(img, out, stroke_centers, strokes, step_size, length, diameter, option
 
     edges = get_canny_edges(img, diameter, options.clip)
 
-    for i, center in enumerate(tqdm(stroke_centers)):
+    enumerable = stroke_centers
+    if not options.quiet:
+        enumerable = tqdm(stroke_centers)
+    for i, center in enumerate(enumerable):
         if (
             center[0] < diameter
             or center[1] < diameter

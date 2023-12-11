@@ -1,4 +1,5 @@
 import numpy as np
+from tqdm import tqdm
 from paint import generate_stroke_sizes, paint, stroke_list
 from skimage import transform
 import cv2
@@ -14,6 +15,7 @@ def paint_image(img, mask, options):
 
     step_size, strokes = generate_stroke_sizes(mask, length, radius)
 
+    options.quiet = False
     return paint(
         img, out, stroke_centers, strokes, step_size, length, diameter, options
     )
@@ -27,24 +29,34 @@ def get_spaced_centers(good_points, original_points, img_shape, spacing_radius=1
 
     points_to_include = np.ones((original_points.shape[0] + good_points.shape[0], 2))
     all_points = np.concatenate((good_points, original_points))
-    
-    print(f'# points before: {all_points.shape[0]}')
 
-    plot = np.zeros(img_shape, dtype=np.uint8) # make sure this is 1-D
+    # print(f'# points before: {all_points.shape[0]}')
+
+    plot = np.zeros(img_shape, dtype=np.uint8)  # make sure this is 1-D
     plot[good_points[:, 1], good_points[:, 0]] = 1
 
     # remove points from original_points:
-    #for i in range(original_points.shape[0]):
+    # for i in range(original_points.shape[0]):
     for i in reversed(range(points_to_include.shape[0])):
-
         point = (int(all_points[i, 1]), int(all_points[i, 0]))
 
-        if point[0] < 0 or point[0] >= plot.shape[0] or point[1] < 0 or point[1] >= plot.shape[1]:
+        if (
+            point[0] < 0
+            or point[0] >= plot.shape[0]
+            or point[1] < 0
+            or point[1] >= plot.shape[1]
+        ):
             points_to_include[i, :] = 0
             continue
 
-        y_window_bounds = (max(point[0] - spacing_radius, 0), min(point[0] + spacing_radius, plot.shape[0] - 1))
-        x_window_bounds = (max(point[1] - spacing_radius, 0), min(point[1] + spacing_radius, plot.shape[1] - 1))
+        y_window_bounds = (
+            max(point[0] - spacing_radius, 0),
+            min(point[0] + spacing_radius, plot.shape[0] - 1),
+        )
+        x_window_bounds = (
+            max(point[1] - spacing_radius, 0),
+            min(point[1] + spacing_radius, plot.shape[1] - 1),
+        )
 
         points_in_neighborhood = np.sum(
             plot[
@@ -59,7 +71,7 @@ def get_spaced_centers(good_points, original_points, img_shape, spacing_radius=1
         else:
             # only need this if checking for density:
             plot[point[0], point[1]] = 1
-    
+
     return all_points[points_to_include == 1]
 
 
@@ -73,6 +85,9 @@ def paint_video(vid, out_path, mask, options):
     vid should be a filepath
     """
     vidcap = cv2.VideoCapture(vid)
+
+    fps = vidcap.get(cv2.CAP_PROP_FPS)
+    totalFrames = int(vidcap.get(cv2.CAP_PROP_FRAME_COUNT))
 
     # Parameters for lucas kanade optical flow
     lk_params = dict(
@@ -104,6 +119,7 @@ def paint_video(vid, out_path, mask, options):
     step_size, strokes = generate_stroke_sizes(mask, length, diameter)
 
     # every argument except for the first three will be the same for each frame
+    options.quiet = True
     out = paint(
         prev_frame,
         out,
@@ -121,7 +137,7 @@ def paint_video(vid, out_path, mask, options):
     prev_painted = out
     new_centers = None
 
-    while 1:
+    for frame_num in tqdm(range(totalFrames)):
         ret, frame = vidcap.read()
         if not ret:
             print("Exiting video capture")
@@ -130,8 +146,12 @@ def paint_video(vid, out_path, mask, options):
         frame_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
         if new_centers is not None:
-            p0 = get_spaced_centers(new_centers, grid, frame_gray.shape, 1).reshape(-1, 1, 2).astype(np.float32)
-        print(f'# points after: {p0.shape[0]}')
+            p0 = (
+                get_spaced_centers(new_centers, grid, frame_gray.shape, 1)
+                .reshape(-1, 1, 2)
+                .astype(np.float32)
+            )
+        # print(f"# points after: {p0.shape[0]}")
         # might need to switch points from (x, y) to (y, x):
         p1, st, err = cv2.calcOpticalFlowPyrLK(
             old_gray, frame_gray, p0, None, **lk_params
@@ -176,6 +196,66 @@ def paint_video(vid, out_path, mask, options):
 
         old_gray = frame_gray.copy()
         # p0 = good_new.reshape(-1, 1, 2)
+
+    vidcap.release()
+    out_vid.release()
+
+
+def paint_video_naive(vid, out_path, mask, options):
+    vidcap = cv2.VideoCapture(vid)
+
+    fps = vidcap.get(cv2.CAP_PROP_FPS)
+    totalFrames = int(vidcap.get(cv2.CAP_PROP_FRAME_COUNT))
+
+    ret, prev_frame = vidcap.read()
+
+    fourcc = cv2.VideoWriter_fourcc(*"MJPG")  # mp4 format
+    out_vid = cv2.VideoWriter(
+        out_path,
+        fourcc,
+        vidcap.get(cv2.CAP_PROP_FPS),
+        (prev_frame.shape[1], prev_frame.shape[0]),
+    )
+
+    length, radius = options.length, options.radius
+
+    diameter = 2 * radius + 1
+
+    stroke_centers = stroke_list(prev_frame.shape, diameter)
+
+    step_size, strokes = generate_stroke_sizes(mask, length, diameter)
+
+    # every argument except for the first three will be the same for each frame
+    options.quiet = True
+    out = paint(
+        prev_frame,
+        np.full(prev_frame.shape, 255),
+        stroke_centers,
+        strokes,
+        step_size,
+        length,
+        diameter,
+        options,
+    )
+    out_vid.write(out)
+
+    for frame_num in tqdm(range(totalFrames)):
+        ret, frame = vidcap.read()
+        if not ret:
+            print("Exiting video capture")
+            break
+
+        out = paint(
+            frame,
+            np.full(frame.shape, 255),
+            stroke_centers,
+            strokes,
+            step_size,
+            length,
+            diameter,
+            options,
+        )
+        out_vid.write(out)
 
     vidcap.release()
     out_vid.release()
