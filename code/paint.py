@@ -3,15 +3,13 @@ import numpy as np
 from scipy import interpolate
 from skimage import transform
 from tqdm import tqdm
-import matplotlib.pyplot as plt
 
 
-def stroke_list(shape, radius):
+def stroke_list(shape, diameter):
     h, w, _ = shape
-    diameter = 2 * radius + 1
 
-    x_range = np.linspace(diameter, w - diameter - 1, (w - 2 * diameter - 1) // radius)
-    y_range = np.linspace(diameter, h - diameter - 1, (h - 2 * diameter - 1) // radius)
+    x_range = np.linspace(diameter, w - diameter - 1, (w - 2 * diameter - 1) // 2)
+    y_range = np.linspace(diameter, h - diameter - 1, (h - 2 * diameter - 1) // 2)
 
     x_grid, y_grid = np.meshgrid(x_range, y_range)
 
@@ -21,13 +19,9 @@ def stroke_list(shape, radius):
     return coordinates
 
 
-def generate_stroke_sizes(mask, length, radius):
+def generate_stroke_sizes(mask, length, diameter):
     strokes = {}
     step_size = 1
-    diameter = 2 * radius + 1
-
-    if mask is not None:
-        resized = transform.rescale(mask, diameter / mask.shape[0])
 
     if length > 20:
         step_size = length / 20
@@ -35,13 +29,14 @@ def generate_stroke_sizes(mask, length, radius):
     size = step_size
     while size <= length:
         stroke_len = int(size)
-        if mask is not None:
-            strokes[stroke_len] = np.hstack(
-                (resized[:, : radius + stroke_len], resized[:, -radius:])
-            )
-        else:
-            strokes[stroke_len] = np.ones((diameter, stroke_len + diameter))
+        stroke_mask = np.zeros((diameter, stroke_len + diameter))
+        addition = mask.copy()
+        if size == step_size:
+            addition[addition < 0.2] = 0.2
+        for i in range(stroke_len):
+            stroke_mask[0:diameter, i : i + diameter] += addition
 
+        strokes[stroke_len] = np.clip(stroke_mask, 0, 1)
         size += step_size
 
     return step_size, strokes
