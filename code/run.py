@@ -2,6 +2,7 @@ import numpy as np
 from paint import generate_stroke_sizes, paint, stroke_list
 from skimage import transform
 import cv2
+import matplotlib.pyplot as plt
 
 
 def paint_image(img, mask, options):
@@ -19,8 +20,8 @@ def paint_image(img, mask, options):
     )
 
 
-# currently assuming points are in shape (n, 2)
-def get_spaced_centers(good_points, original_points, img_shape, spacing_radius=1):
+# expects points to be in shape (n, 2)
+def get_spaced_centers(good_points, original_points, img_shape, spacing_radius):
     # delete duplicates:
     u, ind = np.unique(good_points, axis=0, return_index=True)
     good_points = u[np.argsort(ind)]
@@ -30,12 +31,11 @@ def get_spaced_centers(good_points, original_points, img_shape, spacing_radius=1
     
     print(f'# points before: {all_points.shape[0]}')
 
-    plot = np.zeros(img_shape, dtype=np.uint8) # make sure this is 1-D
+    plot = np.zeros(img_shape, dtype=np.uint8)
     plot[good_points[:, 1], good_points[:, 0]] = 1
 
     # remove points from original_points:
-    #for i in range(original_points.shape[0]):
-    for i in reversed(range(points_to_include.shape[0])):
+    for i in range(points_to_include.shape[0]):
 
         point = (int(all_points[i, 1]), int(all_points[i, 0]))
 
@@ -54,10 +54,12 @@ def get_spaced_centers(good_points, original_points, img_shape, spacing_radius=1
         )
 
         # start with assumption that we keep all points
-        if points_in_neighborhood > 0:
+        if i < good_points.shape[0] and points_in_neighborhood > 1:
+            points_to_include[i, :] = 0
+            plot[point[0], point[1]] = 0
+        elif i > good_points.shape[0] and points_in_neighborhood > 0:
             points_to_include[i, :] = 0
         else:
-            # only need this if checking for density:
             plot[point[0], point[1]] = 1
     
     return all_points[points_to_include == 1]
@@ -130,25 +132,20 @@ def paint_video(vid, out_path, mask, options):
         frame_gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
         if new_centers is not None:
-            p0 = get_spaced_centers(new_centers, grid, frame_gray.shape, 1).reshape(-1, 1, 2).astype(np.float32)
+            # could just pass in good new
+            p0 = get_spaced_centers(new_centers, grid, frame_gray.shape, radius//2 + 1).reshape(-1, 1, 2).astype(np.float32)
+
         print(f'# points after: {p0.shape[0]}')
-        # might need to switch points from (x, y) to (y, x):
+        
         p1, st, err = cv2.calcOpticalFlowPyrLK(
             old_gray, frame_gray, p0, None, **lk_params
         )
 
-        # print(f'output shape: {p1.shape}')
-
         # use following line to keep all points
         # p1 = p1.reshape(-1,2)
 
-        # print(f'max x: {np.max(p1[:, 0])}, max y: {np.max(p1[:, 1])}')
-
         good_new = p1[st == 1]
         good_old = p0[st == 1]
-        # good_new = good_new.reshape(-1, 2)
-        # good_new = good_new.reshape(-1,2,1)
-        # print(f'pass in shape: {good_new.shape}')
 
         new_centers = (
             np.concatenate((good_new, good_old)).astype(np.int32).reshape(-1, 2)
@@ -175,7 +172,6 @@ def paint_video(vid, out_path, mask, options):
         prev_painted = out
 
         old_gray = frame_gray.copy()
-        # p0 = good_new.reshape(-1, 1, 2)
 
     vidcap.release()
     out_vid.release()

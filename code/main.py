@@ -3,7 +3,7 @@ import os
 import sys
 
 import cv2
-from run import paint_image, paint_video, optical_flow
+from run import paint_image, paint_video
 
 
 def main(args):
