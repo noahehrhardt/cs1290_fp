@@ -4,7 +4,7 @@ Mehek and Noah Final Project: Impressionist Paintings
 
 ## Run the code
 
-`usage: main.py [-h] [-m MASK] [-l LENGTH] [-r RADIUS] [-a ANGLE] [-p] [-c] [-o] [-i] input`
+`usage: main.py [-h] [-m MASK] [-l LENGTH] [-r RADIUS] [-a ANGLE] [-p] [-c] [-o] [-i] [-v] [-f] input`
 
 ```
 positional arguments:
