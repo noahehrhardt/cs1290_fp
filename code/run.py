@@ -93,7 +93,7 @@ def paint_video(vid, out_path, mask, options):
     # Parameters for lucas kanade optical flow
     lk_params = dict(
         winSize=(15, 15),
-        # I believe that calcOpticalFlowPyrLK constructs the pyramids itself with maxLevel as the max pyramid level
+        # calcOpticalFlowPyrLK constructs the pyramids itself with maxLevel as the max pyramid level
         maxLevel=2,
         criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 10, 0.03),
     )
