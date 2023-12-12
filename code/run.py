@@ -101,7 +101,7 @@ def paint_video(vid, out_path, mask, options):
     ret, prev_frame = vidcap.read()
     old_gray = cv2.cvtColor(prev_frame, cv2.COLOR_BGR2GRAY)
 
-    fourcc = cv2.VideoWriter_fourcc(*"MJPG")  # mp4 format
+    fourcc = cv2.VideoWriter_fourcc(*"avc1")  # mp4 format
     out_vid = cv2.VideoWriter(
         out_path,
         fourcc,
@@ -200,7 +200,7 @@ def paint_video_naive(vid, out_path, mask, options):
 
     ret, prev_frame = vidcap.read()
 
-    fourcc = cv2.VideoWriter_fourcc(*"MJPG")  # mp4 format
+    fourcc = cv2.VideoWriter_fourcc(*"avc1")  # mp4 format
     out_vid = cv2.VideoWriter(
         out_path,
         fourcc,
