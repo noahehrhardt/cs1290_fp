@@ -20,5 +20,6 @@ options:
   -c, --clip                    Don't clip strokes at edges
   -o, --orient                  Don't orient strokes based on gradients
   -i, --interp                  Don't interpolate stroke gradient directions
+  -f, --flow                    Don't use optical flow to optimize painting video frames
   -v, --view                    Show view of stroke placement in real time
 ```
