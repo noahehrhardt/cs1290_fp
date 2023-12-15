@@ -78,12 +78,7 @@ def get_spaced_centers(good_points, original_points, img_shape, spacing_radius):
 
 def paint_video(vid, out_path, mask, options):
     """
-    I mostly followed this tutorial: https://opencv24-python-tutorials.readthedocs.io/en/latest/py_tutorials/py_video/py_lucas_kanade/py_lucas_kanade.html
-    and these docs: https://docs.opencv.org/3.4/dc/d6b/group__video__track.html
-
     I used this to download youtube videos: https://github.com/ytdl-org/youtube-dl/blob/master/README.md#readme
-
-    vid should be a filepath
     """
     vidcap = cv2.VideoCapture(vid)
 
@@ -156,9 +151,6 @@ def paint_video(vid, out_path, mask, options):
             old_gray, frame_gray, p0, None, **lk_params
         )
 
-        # use following line to keep all points
-        # p1 = p1.reshape(-1,2)
-
         good_new = p1[st == 1]
         good_old = p0[st == 1]
 
@@ -171,7 +163,6 @@ def paint_video(vid, out_path, mask, options):
         new_centers = new_centers[new_centers[:, 1] >= 0]
         new_centers = new_centers[new_centers[:, 1] < frame_gray.shape[0]]
 
-        # out = np.full(frame.shape, 255)
         out = paint(
             frame,
             prev_painted,
